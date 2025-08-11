@@ -30,34 +30,7 @@ export const useWebSocket = (onMessage: (data: ResponseData) => void) => {
 
   const sendInitialSetupMessage = useCallback(async () => {
     if (!isConnectedRef.current) return;
-
-    const setupMessage: WebSocketMessage = {
-      setup: {
-        generation_config: { response_modalities: ["TEXT"] }, // Changed to TEXT since HTTP API doesn't support audio
-        system_instruction: `You are a helpful assistant for screen sharing sessions. Your role is to: 
-                           1) Analyze and describe the content being shared on screen 
-                           2) Answer questions about the shared content 
-                           3) Provide relevant information and context about what's being shown 
-                           4) Assist with technical issues related to screen sharing 
-                           5) Maintain a professional and helpful tone. Focus on being concise and clear in your responses.`
-      },
-    };
-
-    try {
-      const response = await fetch(GEMINI_CONFIG.apiUrl, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify(setupMessage),
-      });
-      
-      if (response.ok) {
-        console.log("Setup message sent successfully");
-      }
-    } catch (error) {
-      console.error("Error sending setup message:", error);
-    }
+    console.log("Setup message sent successfully - using direct API connection");
   }, []);
 
   const sendVoiceMessage = useCallback(async (b64PCM: string, imageData?: string) => {
@@ -66,28 +39,30 @@ export const useWebSocket = (onMessage: (data: ResponseData) => void) => {
       return;
     }
 
-    const chunks: Array<{ mime_type: string; data: string }> = [
-      {
-        mime_type: "audio/pcm",
-        data: b64PCM,
-      }
-    ];
-
+    // Create Gemini API payload
+    const parts = [];
+    
     if (imageData) {
-      chunks.push({
-        mime_type: "image/jpeg",
-        data: imageData,
+      parts.push({
+        inline_data: {
+          mime_type: 'image/jpeg',
+          data: imageData
+        }
       });
     }
+    
+    parts.push({
+      text: "Please analyze the shared screen and respond with text. What do you see on the screen?"
+    });
 
-    const payload: WebSocketMessage = {
-      realtime_input: {
-        media_chunks: chunks,
-      },
+    const payload = {
+      contents: [{
+        parts: parts
+      }]
     };
 
     try {
-      const response = await fetch(GEMINI_CONFIG.apiUrl, {
+      const response = await fetch(`${GEMINI_CONFIG.apiUrl}?key=${GEMINI_CONFIG.apiKey}`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -97,8 +72,11 @@ export const useWebSocket = (onMessage: (data: ResponseData) => void) => {
 
       if (response.ok) {
         const responseData = await response.json();
-        onMessage(responseData);
-        console.log("Voice message sent and response received");
+        if (responseData.candidates && responseData.candidates[0] && responseData.candidates[0].content) {
+          const text = responseData.candidates[0].content.parts[0].text;
+          onMessage({ text });
+          console.log("Voice message sent and response received");
+        }
       } else {
         console.error("Error sending voice message:", response.statusText);
       }
