@@ -36,10 +36,7 @@ const GeminiLiveDemo = () => {
     }
   }, [playAudioChunk]);
 
-  const { connect, sendVoiceMessage, isConnected } = useWebSocket(
-    "ws://localhost:9083",
-    handleWebSocketMessage
-  );
+  const { connect, sendVoiceMessage, isConnected } = useWebSocket(handleWebSocketMessage);
 
   const handleAudioData = useCallback((b64PCM: string) => {
     const currentFrame = getCurrentFrame();
@@ -250,11 +247,11 @@ const GeminiLiveDemo = () => {
           </CardHeader>
           <CardContent>
             <ol className="list-decimal list-inside space-y-2 text-sm text-muted-foreground">
-              <li>Make sure the Python WebSocket server is running on localhost:9083</li>
               <li>Click "Share Screen" to start screen sharing</li>
               <li>Click "Start Recording" to begin voice recording</li>
               <li>Gemini will analyze your screen and respond to voice input</li>
-              <li>Audio responses will play automatically</li>
+              <li>Text responses will appear in the chat log</li>
+              <li>The app uses Supabase Edge Functions to connect to Gemini API</li>
             </ol>
           </CardContent>
         </Card>

@@ -1,4 +1,5 @@
 import { useRef, useCallback, useEffect } from 'react';
+import { GEMINI_CONFIG } from '@/config/gemini';
 
 interface WebSocketMessage {
   setup?: {
@@ -18,44 +19,21 @@ interface ResponseData {
   audio?: string;
 }
 
-export const useWebSocket = (url: string, onMessage: (data: ResponseData) => void) => {
-  const webSocketRef = useRef<WebSocket | null>(null);
-  const isConnectedRef = useRef(false);
+export const useWebSocket = (onMessage: (data: ResponseData) => void) => {
+  const isConnectedRef = useRef(true); // Always connected for HTTP API
 
   const connect = useCallback(() => {
-    if (webSocketRef.current?.readyState === WebSocket.OPEN) return;
+    console.log("Connected to Gemini API via HTTP");
+    isConnectedRef.current = true;
+    sendInitialSetupMessage();
+  }, [onMessage]);
 
-    console.log("connecting: ", url);
-    webSocketRef.current = new WebSocket(url);
-
-    webSocketRef.current.onopen = () => {
-      console.log("websocket open");
-      isConnectedRef.current = true;
-      sendInitialSetupMessage();
-    };
-
-    webSocketRef.current.onclose = (event) => {
-      console.log("websocket closed: ", event);
-      isConnectedRef.current = false;
-    };
-
-    webSocketRef.current.onerror = (event) => {
-      console.log("websocket error: ", event);
-      isConnectedRef.current = false;
-    };
-
-    webSocketRef.current.onmessage = (event) => {
-      const messageData = JSON.parse(event.data);
-      onMessage(messageData);
-    };
-  }, [url, onMessage]);
-
-  const sendInitialSetupMessage = useCallback(() => {
-    if (!webSocketRef.current || !isConnectedRef.current) return;
+  const sendInitialSetupMessage = useCallback(async () => {
+    if (!isConnectedRef.current) return;
 
     const setupMessage: WebSocketMessage = {
       setup: {
-        generation_config: { response_modalities: ["AUDIO"] },
+        generation_config: { response_modalities: ["TEXT"] }, // Changed to TEXT since HTTP API doesn't support audio
         system_instruction: `You are a helpful assistant for screen sharing sessions. Your role is to: 
                            1) Analyze and describe the content being shared on screen 
                            2) Answer questions about the shared content 
@@ -65,13 +43,26 @@ export const useWebSocket = (url: string, onMessage: (data: ResponseData) => voi
       },
     };
 
-    webSocketRef.current.send(JSON.stringify(setupMessage));
-    console.log("sent setup message");
+    try {
+      const response = await fetch(GEMINI_CONFIG.apiUrl, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(setupMessage),
+      });
+      
+      if (response.ok) {
+        console.log("Setup message sent successfully");
+      }
+    } catch (error) {
+      console.error("Error sending setup message:", error);
+    }
   }, []);
 
-  const sendVoiceMessage = useCallback((b64PCM: string, imageData?: string) => {
-    if (!webSocketRef.current || !isConnectedRef.current) {
-      console.log("websocket not initialized");
+  const sendVoiceMessage = useCallback(async (b64PCM: string, imageData?: string) => {
+    if (!isConnectedRef.current) {
+      console.log("API not connected");
       return;
     }
 
@@ -95,16 +86,30 @@ export const useWebSocket = (url: string, onMessage: (data: ResponseData) => voi
       },
     };
 
-    webSocketRef.current.send(JSON.stringify(payload));
-    console.log("sent voice message");
-  }, []);
+    try {
+      const response = await fetch(GEMINI_CONFIG.apiUrl, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(payload),
+      });
+
+      if (response.ok) {
+        const responseData = await response.json();
+        onMessage(responseData);
+        console.log("Voice message sent and response received");
+      } else {
+        console.error("Error sending voice message:", response.statusText);
+      }
+    } catch (error) {
+      console.error("Error sending voice message:", error);
+    }
+  }, [onMessage]);
 
   const disconnect = useCallback(() => {
-    if (webSocketRef.current) {
-      webSocketRef.current.close();
-      webSocketRef.current = null;
-      isConnectedRef.current = false;
-    }
+    isConnectedRef.current = false;
+    console.log("Disconnected from Gemini API");
   }, []);
 
   useEffect(() => {
